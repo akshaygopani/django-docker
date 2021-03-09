@@ -4,7 +4,6 @@ pipeline{
           stage('Build') {
               
             steps {
-                sh "cd django"
                 sh "cat docker-compose-aws.yml"
             }
         }   

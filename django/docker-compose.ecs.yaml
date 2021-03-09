@@ -1,0 +1,493 @@
+Resources:
+  CloudMap:
+    Properties:
+      Description: Service Map for Docker Compose project django
+      Name: django.local
+      Vpc: vpc-9bdd69e6
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+  Cluster:
+    Properties:
+      ClusterName: django
+      Tags:
+      - Key: com.docker.compose.project
+        Value: django
+    Type: AWS::ECS::Cluster
+  DbService:
+    Properties:
+      Cluster:
+        Fn::GetAtt:
+        - Cluster
+        - Arn
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DeploymentController:
+        Type: ECS
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+          - Ref: DefaultNetwork
+          Subnets:
+          - subnet-5392c05d
+          - subnet-ddb42cbb
+          - subnet-d605a9e7
+          - subnet-53ccab72
+          - subnet-b3c5edfe
+          - subnet-d684e189
+      PlatformVersion: 1.4.0
+      PropagateTags: SERVICE
+      SchedulingStrategy: REPLICA
+      ServiceRegistries:
+      - RegistryArn:
+          Fn::GetAtt:
+          - DbServiceDiscoveryEntry
+          - Arn
+      Tags:
+      - Key: com.docker.compose.project
+        Value: django
+      - Key: com.docker.compose.service
+        Value: db
+      TaskDefinition:
+        Ref: DbTaskDefinition
+    Type: AWS::ECS::Service
+  DbServiceDiscoveryEntry:
+    Properties:
+      Description: '"db" service discovery entry in Cloud Map'
+      DnsConfig:
+        DnsRecords:
+        - TTL: 60
+          Type: A
+        RoutingPolicy: MULTIVALUE
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+      Name: db
+      NamespaceId:
+        Ref: CloudMap
+    Type: AWS::ServiceDiscovery::Service
+  DbTaskDefinition:
+    Properties:
+      ContainerDefinitions:
+      - Command:
+        - us-east-1.compute.internal
+        - django.local
+        Essential: false
+        Image: docker/ecs-searchdomain-sidecar:1.0
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: LogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: django
+        Name: Db_ResolvConf_InitContainer
+      - DependsOn:
+        - Condition: SUCCESS
+          ContainerName: Db_ResolvConf_InitContainer
+        Environment:
+        - Name: PGPORT
+          Value: "5432"
+        - Name: POSTGRES_DB
+          Value: sample_db
+        - Name: POSTGRES_PASSWORD
+          Value: testpassword
+        - Name: POSTGRES_USER
+          Value: testuser
+        Essential: true
+        Image: docker.io/library/postgres:11-alpine@sha256:3d28d3d9295bf03e1a6fba1b335dfc1560501aa678c6aa74f18849111721e886
+        LinuxParameters: {}
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: LogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: django
+        Name: db
+      Cpu: "256"
+      ExecutionRoleArn:
+        Ref: DbTaskExecutionRole
+      Family: django-db
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+      - FARGATE
+    Type: AWS::ECS::TaskDefinition
+  DbTaskExecutionRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Condition: {}
+          Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+      Tags:
+      - Key: com.docker.compose.project
+        Value: django
+      - Key: com.docker.compose.service
+        Value: db
+    Type: AWS::IAM::Role
+  Default8000Ingress:
+    Properties:
+      CidrIp: 0.0.0.0/0
+      Description: nginx:8000/tcp on default network
+      FromPort: 8000
+      GroupId:
+        Ref: DefaultNetwork
+      IpProtocol: TCP
+      ToPort: 8000
+    Type: AWS::EC2::SecurityGroupIngress
+  DefaultNetwork:
+    Properties:
+      GroupDescription: django Security Group for default network
+      Tags:
+      - Key: com.docker.compose.project
+        Value: django
+      - Key: com.docker.compose.network
+        Value: django_default
+      VpcId: vpc-9bdd69e6
+    Type: AWS::EC2::SecurityGroup
+  DefaultNetworkIngress:
+    Properties:
+      Description: Allow communication within network default
+      GroupId:
+        Ref: DefaultNetwork
+      IpProtocol: "-1"
+      SourceSecurityGroupId:
+        Ref: DefaultNetwork
+    Type: AWS::EC2::SecurityGroupIngress
+  LoadBalancer:
+    Properties:
+      LoadBalancerAttributes:
+      - Key: load_balancing.cross_zone.enabled
+        Value: "true"
+      Scheme: internet-facing
+      Subnets:
+      - subnet-5392c05d
+      - subnet-ddb42cbb
+      - subnet-d605a9e7
+      - subnet-53ccab72
+      - subnet-b3c5edfe
+      - subnet-d684e189
+      Tags:
+      - Key: com.docker.compose.project
+        Value: django
+      Type: network
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+  LogGroup:
+    Properties:
+      LogGroupName: /docker-compose/django
+    Type: AWS::Logs::LogGroup
+  NginxService:
+    DependsOn:
+    - NginxTCP8000Listener
+    - WebService
+    Properties:
+      Cluster:
+        Fn::GetAtt:
+        - Cluster
+        - Arn
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DeploymentController:
+        Type: ECS
+      DesiredCount: 1
+      LaunchType: FARGATE
+      LoadBalancers:
+      - ContainerName: nginx
+        ContainerPort: 8000
+        TargetGroupArn:
+          Ref: NginxTCP8000TargetGroup
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+          - Ref: DefaultNetwork
+          Subnets:
+          - subnet-5392c05d
+          - subnet-ddb42cbb
+          - subnet-d605a9e7
+          - subnet-53ccab72
+          - subnet-b3c5edfe
+          - subnet-d684e189
+      PlatformVersion: 1.4.0
+      PropagateTags: SERVICE
+      SchedulingStrategy: REPLICA
+      ServiceRegistries:
+      - RegistryArn:
+          Fn::GetAtt:
+          - NginxServiceDiscoveryEntry
+          - Arn
+      Tags:
+      - Key: com.docker.compose.project
+        Value: django
+      - Key: com.docker.compose.service
+        Value: nginx
+      TaskDefinition:
+        Ref: NginxTaskDefinition
+    Type: AWS::ECS::Service
+  NginxServiceDiscoveryEntry:
+    Properties:
+      Description: '"nginx" service discovery entry in Cloud Map'
+      DnsConfig:
+        DnsRecords:
+        - TTL: 60
+          Type: A
+        RoutingPolicy: MULTIVALUE
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+      Name: nginx
+      NamespaceId:
+        Ref: CloudMap
+    Type: AWS::ServiceDiscovery::Service
+  NginxTCP8000Listener:
+    Properties:
+      DefaultActions:
+      - ForwardConfig:
+          TargetGroups:
+          - TargetGroupArn:
+              Ref: NginxTCP8000TargetGroup
+        Type: forward
+      LoadBalancerArn:
+        Ref: LoadBalancer
+      Port: 8000
+      Protocol: TCP
+    Type: AWS::ElasticLoadBalancingV2::Listener
+  NginxTCP8000TargetGroup:
+    Properties:
+      Port: 8000
+      Protocol: TCP
+      Tags:
+      - Key: com.docker.compose.project
+        Value: django
+      TargetType: ip
+      VpcId: vpc-9bdd69e6
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+  NginxTaskDefinition:
+    Properties:
+      ContainerDefinitions:
+      - Command:
+        - us-east-1.compute.internal
+        - django.local
+        Essential: false
+        Image: docker/ecs-searchdomain-sidecar:1.0
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: LogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: django
+        Name: Nginx_ResolvConf_InitContainer
+      - DependsOn:
+        - Condition: SUCCESS
+          ContainerName: Nginx_ResolvConf_InitContainer
+        Essential: true
+        Image: 568056480524.dkr.ecr.ap-south-1.amazonaws.com/django_nginx:latest@sha256:7f43ed9959ec995c7cd6ba016832a3bd825fa29c95ecb439ffbb6e16c5614771
+        LinuxParameters: {}
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: LogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: django
+        Name: nginx
+        PortMappings:
+        - ContainerPort: 8000
+          HostPort: 8000
+          Protocol: tcp
+      Cpu: "256"
+      ExecutionRoleArn:
+        Ref: NginxTaskExecutionRole
+      Family: django-nginx
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+      - FARGATE
+    Type: AWS::ECS::TaskDefinition
+  NginxTaskExecutionRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Condition: {}
+          Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+      Tags:
+      - Key: com.docker.compose.project
+        Value: django
+      - Key: com.docker.compose.service
+        Value: nginx
+    Type: AWS::IAM::Role
+  WebService:
+    DependsOn:
+    - DbService
+    Properties:
+      Cluster:
+        Fn::GetAtt:
+        - Cluster
+        - Arn
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DeploymentController:
+        Type: ECS
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+          - Ref: DefaultNetwork
+          Subnets:
+          - subnet-5392c05d
+          - subnet-ddb42cbb
+          - subnet-d605a9e7
+          - subnet-53ccab72
+          - subnet-b3c5edfe
+          - subnet-d684e189
+      PlatformVersion: 1.4.0
+      PropagateTags: SERVICE
+      SchedulingStrategy: REPLICA
+      ServiceRegistries:
+      - RegistryArn:
+          Fn::GetAtt:
+          - WebServiceDiscoveryEntry
+          - Arn
+      Tags:
+      - Key: com.docker.compose.project
+        Value: django
+      - Key: com.docker.compose.service
+        Value: web
+      TaskDefinition:
+        Ref: WebTaskDefinition
+    Type: AWS::ECS::Service
+  WebServiceDiscoveryEntry:
+    Properties:
+      Description: '"web" service discovery entry in Cloud Map'
+      DnsConfig:
+        DnsRecords:
+        - TTL: 60
+          Type: A
+        RoutingPolicy: MULTIVALUE
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+      Name: web
+      NamespaceId:
+        Ref: CloudMap
+    Type: AWS::ServiceDiscovery::Service
+  WebTaskDefinition:
+    Properties:
+      ContainerDefinitions:
+      - Command:
+        - us-east-1.compute.internal
+        - django.local
+        Essential: false
+        Image: docker/ecs-searchdomain-sidecar:1.0
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: LogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: django
+        Name: Web_ResolvConf_InitContainer
+      - Command:
+        - sh
+        - -c
+        - python manage.py makemigrations && python manage.py migrate && python manage.py
+          initiate_admin && python manage.py collectstatic && gunicorn sampleApp.wsgi:application
+          --bind 0.0.0.0:8000
+        DependsOn:
+        - Condition: SUCCESS
+          ContainerName: Web_ResolvConf_InitContainer
+        Environment:
+        - Name: ALLOWED_HOSTS
+          Value: 'localhost 127.0.0.1 0.0.0.0 [::1] '
+        - Name: APP_PORT
+          Value: "8000"
+        - Name: AWS_PROFILE
+          Value: default
+        - Name: AWS_REGION
+          Value: ap-south-1
+        - Name: DB_HOST
+          Value: db
+        - Name: DB_NAME
+          Value: sample_db
+        - Name: DB_PORT
+          Value: "5432"
+        - Name: DJANGO_SU_EMAIL
+          Value: admin12@admin.com
+        - Name: DJANGO_SU_NAME
+          Value: admin
+        - Name: DJANGO_SU_PASSWORD
+          Value: mypass123
+        - Name: ENGINE
+          Value: django.db.backends.postgresql
+        - Name: POSTGRES_PASSWORD
+          Value: testpassword
+        - Name: POSTGRES_USER
+          Value: testuser
+        Essential: true
+        Image: 568056480524.dkr.ecr.ap-south-1.amazonaws.com/sampleapp:latest@sha256:582a1a4af037bec3f1248a379815014a776443b81ae89a93a88c71308fd96436
+        LinuxParameters: {}
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: LogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: django
+        Name: web
+      Cpu: "256"
+      ExecutionRoleArn:
+        Ref: WebTaskExecutionRole
+      Family: django-web
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+      - FARGATE
+    Type: AWS::ECS::TaskDefinition
+  WebTaskExecutionRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Condition: {}
+          Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+      Tags:
+      - Key: com.docker.compose.project
+        Value: django
+      - Key: com.docker.compose.service
+        Value: web
+    Type: AWS::IAM::Role
+

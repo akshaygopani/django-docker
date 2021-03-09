@@ -1,0 +1,44 @@
+version: '3.7'
+
+services:
+  web:
+    image: 568056480524.dkr.ecr.ap-south-1.amazonaws.com/sampleapp:latest
+    command: sh -c "python manage.py makemigrations &&
+                    python manage.py migrate &&
+                    gunicorn sampleApp.wsgi:application --bind 0.0.0.0:${APP_PORT}"
+                    #                                        python manage.py collectstatic &&
+
+                    #  volumes:
+                    #- .:/home/app:rw # map data and files from parent directory in host to microservice directory in docker containe
+                    #  - static_volume:/home/app/static
+    env_file:
+      - .env
+        # expose:
+        #- "8000"
+        #restart: "on-failure"
+    depends_on:
+      - db
+  db:
+    image: postgres:11-alpine
+    #volumes:
+    #  - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    #  - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
+      - PGPORT=${DB_PORT}
+      - POSTGRES_USER=${POSTGRES_USER}
+        # restart: "on-failure"
+  nginx:
+    image: 568056480524.dkr.ecr.ap-south-1.amazonaws.com/django_nginx:latest
+    ports:
+      - "8000:8000"
+        #volumes:
+        #- static_volume:/home/app/static
+    depends_on:
+      - web
+        #restart: "on-failure"
+    #volumes:
+    #postgres_data:
+    #static_volume:
+

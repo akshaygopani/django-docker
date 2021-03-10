@@ -10,19 +10,19 @@ echo '-----building docker image------------'
 docker --context default build -f .
 
 echo '-----adding tag to image------------'
-docker tag django_nginx:2.0 $AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/django_nginx:latest
+docker tag django_nginx:2.0 $AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/django_nginx:2.0
 
 echo '-----pushing docker image to ecr------------'
-docker push $AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/django_nginx:latest
+docker push $AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/django_nginx:2.0
 
 echo '-----building docker image------------'
 docker --context default build -f .
 
 echo '-----adding tag to image------------'
-docker tag sampleapp:2.0 $AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/sampleapp:latest
+docker tag sampleapp:2.0 $AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/sampleapp:2.0
 
 echo '-----pushing docker image to ecr------------'
-docker push $AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/django_nginx:latest
+docker push $AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/django_nginx:2.0
 
 
 

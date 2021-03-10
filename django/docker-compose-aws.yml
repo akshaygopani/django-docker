@@ -2,7 +2,7 @@ version: '3.7'
 
 services:
   web:
-    image: 568056480524.dkr.ecr.ap-south-1.amazonaws.com/sampleapp:latest
+    image: 568056480524.dkr.ecr.ap-south-1.amazonaws.com/sampleapp:2.0
     command: sh -c "python manage.py makemigrations &&
                     python manage.py migrate &&
                     gunicorn sampleApp.wsgi:application --bind 0.0.0.0:${APP_PORT}"
@@ -30,7 +30,7 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
         # restart: "on-failure"
   nginx:
-    image: 568056480524.dkr.ecr.ap-south-1.amazonaws.com/django_nginx:latest
+    image: 568056480524.dkr.ecr.ap-south-1.amazonaws.com/django_nginx:2.0
     ports:
       - "8000:8000"
         #volumes:
